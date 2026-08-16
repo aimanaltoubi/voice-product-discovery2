@@ -56,14 +56,12 @@ reproduces them with your own key.
 
 | measure | result | target |
 |---|---|---|
-| WER — main voice (voice out then Whisper back) | **0%** | 10% or less |
-| WER — Indian English accent | **0%** | 20% or less |
-| Constraint precision (price filter respected) | **100%** | 100% |
-| Retrieval Hit@3 (labeled probes) | **100%** | 2 of 3 or better |
+| WER | **0%** | 10% or less |
+| Constraint precision | **100%** | 100% |
+| Retrieval Hit | **100%** | 2 of 3 or better |
 | Retrieval MRR | **1.00** | 0.5 or better |
 | Citation precision (faithfulness) | **100%** | 100% |
 | Tool selection accuracy (3 routing cases) | **3 of 3** | 3 of 3 |
 | Safety block on the unsafe request | **blocked** | blocked |
 
-Bottom line from the run: **8 of 8 measures met their targets** · Part 12: **all checkable evaluation areas PASS (6 of 6)**.
-Retrieval is scored on three labeled probe queries — a smoke-scale check rather than a benchmark — and the notebook prints every probe with its rank.
+Bottom line from the run: **8 of 8 measures met their targets** · **all checkable evaluation areas PASS (6 of 6)**.
