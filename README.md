@@ -47,10 +47,23 @@ guardrails: [`docs/safety.md`](docs/safety.md) ·
 data pipeline: [`data/README.md`](data/README.md) ·
 prompts + node mapping: [`prompts/README.md`](prompts/README.md)
 
-## Quickstart
+## Measured accuracy — from the executed notebook in this repo
 
-Prereqs:
+Every number below was measured live by [`colab_launch.ipynb`](colab_launch.ipynb).
+Part 8 collects the measures. Part 12 maps them onto the evaluation areas.
+The executed notebook stored in this repository shows these outputs. Re-running
+reproduces them with your own key.
 
-- Python 3.11+ (3.12 tested)
-- Node 18+
-- a microphone-capable browser
+| measure | result | target |
+|---|---|---|
+| WER — main voice (voice out then Whisper back) | **0%** | 10% or less |
+| WER — Indian English accent | **0%** | 20% or less |
+| Constraint precision (price filter respected) | **100%** | 100% |
+| Retrieval Hit@3 (labeled probes) | **100%** | 2 of 3 or better |
+| Retrieval MRR | **1.00** | 0.5 or better |
+| Citation precision (faithfulness) | **100%** | 100% |
+| Tool selection accuracy (3 routing cases) | **3 of 3** | 3 of 3 |
+| Safety block on the unsafe request | **blocked** | blocked |
+
+Bottom line from the run: **8 of 8 measures met their targets** · Part 12: **all checkable evaluation areas PASS (6 of 6)**.
+Retrieval is scored on three labeled probe queries — a smoke-scale check rather than a benchmark — and the notebook prints every probe with its rank.
