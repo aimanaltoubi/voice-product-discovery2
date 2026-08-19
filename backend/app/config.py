@@ -1,6 +1,6 @@
 """Central configuration. Every provider choice (LLM, embeddings, ASR, TTS,
-web search) is driven purely by environment variables, satisfying the brief's
-"Model-Agnostic Requirement": swap providers without touching orchestration code.
+web search) is driven purely by environment variables - swap providers
+without touching orchestration code.
 
 Load order: process env > repo-root .env (via python-dotenv).
 """

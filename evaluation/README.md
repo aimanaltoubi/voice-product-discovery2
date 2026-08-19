@@ -3,7 +3,7 @@
 This folder holds the standalone evaluation for DiscoveryVoice:
 
 - evaluation.ipynb - runs the nineteen-measure harness against the real pipeline in this repository and renders every section with an independent re-check of each target
-- EVALUATION_ANALYSIS.txt - the full story of how each failing measure led to a named pipeline fix plus the open issues
+- EVALUATION_ANALYSIS.txt - each failing measure and the code change that fixed it plus the open issues
 - evaluation_report.json and evaluation_cases.csv - saved by the notebook after a run
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/aimanaltoubi/voice-product-discovery2/blob/main/evaluation/evaluation.ipynb)
@@ -53,7 +53,7 @@ Fill the result column from the scorecard of the saved run. The executed noteboo
 | Provenance / grounding | - | 95% or more |
 | ProofAgent final score (optional) | - | reported 0 to 10 |
 
-## Limitations stated plainly
+## Limitations
 
 - the faithfulness and relevance judges are themselves models - strong signal rather than ground truth
 - the speech round trip measures the speak and transcribe pair together

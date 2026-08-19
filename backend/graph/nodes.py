@@ -11,7 +11,7 @@ Design notes
   that list is rendered verbatim by the UI's Agent Step Log. Step names
   match the frontend's STEP_LABELS map.
 - LLM outputs are validated against the Pydantic schemas in state.py and
-  then re-checked deterministically (planner rubric enforcement, rerank
+  then re-checked deterministically (planner rule enforcement, rerank
   subset check, answer grounding check). The LLM proposes; code verifies.
 """
 
@@ -183,7 +183,7 @@ def build_nodes(mcp: MCPToolClient) -> dict:
             )],
         }
 
-    # ---- 3. Planner (LLM + deterministic rubric enforcement) ---------------
+    # ---- 3. Planner (LLM + deterministic rule enforcement) -----------------
     async def planner_node(state: dict) -> dict:
         transcript = state["transcript"]
         router = state["router"]
@@ -198,11 +198,11 @@ def build_nodes(mcp: MCPToolClient) -> dict:
         plan = out.model_dump()
         enforced: list[str] = []
 
-        # Rubric rule 1: rag.search is always the primary source of facts.
+        # Rule 1: rag.search is always the primary source of facts.
         if "rag.search" not in plan["sources"]:
             plan["sources"].insert(0, "rag.search")
             enforced.append("added rag.search (private catalog is always primary)")
-        # Rubric rule 2: the live web joins for product searches and price
+        # Rule 2: the live web joins for product searches and price
         # checks (comparison shopping parity with the original app). Only
         # general questions stay catalog-only
         wants_web = router.get("needs_live") or router.get("intent") in ("product_search", "price_check")

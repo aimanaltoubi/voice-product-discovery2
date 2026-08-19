@@ -6,7 +6,7 @@ vector similarity (Chroma)  +  metadata filters (price / category / eco)
 If a strict filter combination returns nothing, filters are relaxed one at a
 time (material -> category -> all, with a Python-side price re-check). Every
 relaxation is recorded and surfaced in the agent step log — this is part of
-the "conflict handling" the rubric asks for.
+the conflict handling between catalog and live data.
 """
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""web.search backends. All providers normalize to the brief's schema:
+"""web.search backends. All providers normalize to one schema:
     {title, url, snippet, price?, availability?}
 
 Default is the keyless DuckDuckGo backend (`ddgs`); Serper / Brave / Tavily

@@ -20,57 +20,53 @@ Fully self-contained: everything runs from this repository. Clone it - install -
 8. Answerer - writes a short spoken answer with inline [n] markers - a claims list - and citations. A grounding layer then verifies every claim against the retrieved data - drops what it cannot verify - renumbers the markers - and a post-processor caps the answer at sixty words ending with a question
 9. Speak - the answer is synthesized to audio (markers stripped - fifteen second cap) and played back
 
-## Architecture
+## Architecture - one voice turn as a flowchart
 
-```
-Browser (React) -- /api/transcribe --> Whisper ASR (faster-whisper)
-      |              /api/discover --> LangGraph:
-      |                                router -> [safety] -> planner
-      |                                  -> retrieve(rag.search + rerank)
-      |                                  -> [web_compare -> reconcile | web_fallback]
-      |                                  -> answerer -> grounding -> post-process
-      |              /api/speak ----> TTS (edge-tts) -> mp3
-      |              /api/products --> catalog browser + product pages
-      |              /api/evaluate --> the nineteen-measure harness
-      |                                        |
-      +-- step log - table - citations   MCP client -- MCP JSON-RPC --> MCP server
-          claims breakdown - history                  web.search (cache + rate limit + trusted sites)
-                                                      rag.search (Chroma retrieval)
-```
+GitHub renders the diagram below. Every box names the stage - the model it calls - and the prompt file it uses. The chat model is one setting (LLM_MODEL - default gpt-4o-mini).
 
-## Quickstart (local)
-
-Backend:
-
-```
-python -m venv .venv && source .venv/bin/activate
-pip install -r backend/requirements.txt
-cd backend
-python -m rag.ingest --csv <path to the Kaggle CSV> --category "Home & Kitchen"
-uvicorn app.main:app --port 8000
+```mermaid
+flowchart TD
+    U([You speak into the mic]) --> ASR["ASR<br/>faster-whisper on this machine<br/>no prompt"]
+    ASR --> R["Router agent<br/>gpt-4o-mini<br/>prompts/router.md + few_shots_router.md"]
+    R --> S{"Safety gate<br/>keyword net + router flags<br/>no model call"}
+    S -- unsafe --> REF([Spoken refusal - stop])
+    S -- mixed - the safe part continues --> P
+    S -- safe --> P["Planner agent<br/>gpt-4o-mini<br/>prompts/planner.md"]
+    P --> RAG["rag.search tool - MCP server<br/>Chroma index + MiniLM encoder + metadata filters<br/>no prompt"]
+    P -- product search or live price --> WEB["web.search tool - MCP server<br/>DuckDuckGo by default - cached 60-300 s - rate limited - logged<br/>no prompt"]
+    RAG --> RR["Reranker agent<br/>gpt-4o-mini<br/>prompts/reranker.md"]
+    RR --> REC["Reconcile<br/>deterministic price comparison<br/>no model call"]
+    WEB --> REC
+    REC --> A["Answerer agent<br/>gpt-4o-mini<br/>prompts/answerer.md + system.md"]
+    A --> G["Grounding<br/>backend/graph/dv.py verifies every claim<br/>no model call"]
+    G --> T["TTS<br/>Edge neural voice - capped to a fifteen second read<br/>no prompt"]
+    T --> OUT([You hear the answer<br/>the screen shows the top pick - table - citations - claims - step log])
 ```
 
-Frontend (second terminal):
+## The agents - what each does and what its prompt says
 
-```
-npm ci
-npm run dev
-```
+One chat model runs every agent (LLM_MODEL - default gpt-4o-mini). Every prompt is a plain markdown file in the prompts folder and is loaded at run time. The summaries below state what each prompt instructs.
 
-Open http://localhost:5173 - the dev server proxies /api and /media to the backend. For a single-port serve: npx vite build then python scripts/serve_colab.py
+**System prompt - prompts/system.md** - prepended to every agent call:
 
-Zero-key smoke run: LLM_PROVIDER=mock EMBEDDINGS_PROVIDER=hash runs the whole pipeline offline with a deterministic stand-in model and a test encoder. Real runs use OPENAI_API_KEY with the local MiniLM encoder.
+- ground every claim only in the provided catalog rows (by doc_id) or live results (by url) - never invent products or prices or ratings
+- say when evidence is missing instead of guessing
+- never give unsafe chemical advice
+- keep the screen answer within sixty words - return strictly the requested JSON
 
-## The dataset slice
+**Router - prompts/router.md + prompts/few_shots_router.md** - turns the transcript into structure. The prompt instructs it to extract: intent (product_search | price_check | general_question) - constraints (budget with number words converted to numbers - material - brand - category - eco flag) - safety_flags for unsafe chemical requests - freshness_needed and needs_live for current price or stock wording - and permissible_query (the safe part of a mixed request). The few-shot file shows worked examples of the exact output shape.
 
-- Amazon Product Dataset 2020 by PromptCloud on Kaggle - downloaded at run time and never committed
-- slice: Home & Kitchen - 712 products by category-path mention
-- fields indexed: title + features text into the embedding - price - category - eco flag - sizes where present as metadata
-- what the file does not carry (ratings - reviews - brand values - ingredients) stays empty rather than invented
+**Planner - prompts/planner.md** - picks the tools and the filters. The prompt instructs: always include rag.search - add web.search when live data is needed or the intent is a product search or a price check - map the constraints into retrieval filters (category - max_price - material - eco_friendly) - and choose three to five comparison criteria.
 
-## How the brief's tasks map to this repository
+**Reranker - prompts/reranker.md** - orders the retrieved candidates. The prompt instructs: rank the top three doc_ids by relevance against the criteria - use only doc_ids that appear in the candidate list - ignore null fields rather than inventing values - and give a one or two sentence rationale.
 
-| Task | Where |
+**Answerer - prompts/answerer.md** - writes the final answer. The prompt instructs: open with the total option count and cite every option once with [n] markers - list one claim object per factual statement (claim - source_type - doc_id plus field for catalog - web_url plus web_title for the web) - name the top pick with its price and fill a one-line top_pick_reason - answer stock and price questions first and explicitly from the live results - include the sentence "I've sent details and sources to your screen." - mention any catalog-versus-live discrepancy - at most sixty words ending by asking whether they want the most affordable option or the highest rated one.
+
+Not agents (no model call): the safety gate (a deterministic keyword net) - reconcile (a deterministic price comparison) - grounding (backend/graph/dv.py verifies every claim against the retrieved data and renumbers the markers).
+
+## What is inside and where
+
+| What | Where |
 |---|---|
 | Voice in and voice out | backend/speech (Whisper + Edge voices) - /api/transcribe - /api/speak - the mic and player in src |
 | Agentic pipeline with steps | backend/graph (router - safety - planner - retrieve - rerank - reconcile - answerer) - every step logged with its input and output |
@@ -91,7 +87,7 @@ Conversation turns with the spoken answer and a play button - a top pick card - 
 
 The harness runs the real pipeline over a graded case suite and reports nineteen measures against fixed targets (ASR WER and CER - router accuracy and macro F1 and constraint extraction - Precision at 3 and Recall at 3 and 8 and 20 and MRR and NDCG at 3 - hybrid filter compliance - answer faithfulness and relevance - latency budgets - case accuracy - index integrity - reconciliation coverage - provenance). Three ways to run it: the /evaluation page in the app - the evaluation notebook - or POST /api/evaluate.
 
-evaluation/EVALUATION_ANALYSIS.txt documents the closed loop where each failing measure led to a named pipeline fix (the safety keyword net - the grounding layer with the top-pick fallback - the freshness fallback - the soft filter ladder - the sixty-word question-ending cap - the WER normalization). A ProofAgent behavior exam is built into the evaluation notebook and runs when its secrets exist.
+evaluation/EVALUATION_ANALYSIS.txt lists each failing measure and the code change that fixed it (the safety keyword net - the grounding layer with the top-pick fallback - the freshness fallback - the soft filter ladder - the sixty-word question-ending cap - the WER normalization). A ProofAgent behavior exam is built into the evaluation notebook and runs when its secrets exist.
 
 ## Environment settings
 

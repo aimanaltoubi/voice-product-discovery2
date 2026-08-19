@@ -12,7 +12,7 @@ Both return the same shape:
      "language": str | None,
      "provider": str}
 
-The `segments` list is the "fragment-based" part of the brief: audio is
+The `segments` list is the fragment-based part of transcription: audio is
 decoded into timestamped fragments which are then joined for the pipeline.
 """
 

@@ -141,6 +141,13 @@ async def run_discovery(
     if not final.get("blocked"):
         grounded = dv.enforce_grounding(answer, products_full, web_results)
         spoken = grounded["spoken_answer"]
+        if not spoken.strip() and products_full:
+            # the model occasionally returns an empty body on odd inputs -
+            # a deterministic line keeps the reply useful
+            first = products_full[0]
+            price = first.get("price")
+            price_part = f" at {price} dollars" if isinstance(price, (int, float)) else ""
+            spoken = f"I found {len(products_full)} options. My top pick is {first.get('title')}{price_part} [1]."
         prefix = final.get("refusal_prefix") or ""
         if prefix:
             spoken = prefix + spoken
@@ -179,6 +186,14 @@ async def run_discovery(
         first = comparison_table[0]
         citations.append({"type": "private", "doc_id": first.get("doc_id"),
                           "title": first.get("title"), "brand": first.get("brand")})
+
+    # a note column for the table: the piece count read from the title
+    import re as _re
+    def _note(title):
+        m = _re.search(r"(\d+)\s*[- ]?piece", str(title or ""), _re.I)
+        return f"{m.group(1)}-piece set" if m else None
+    for _row in comparison_table:
+        _row["note"] = _note(_row.get("title"))
 
     top_pick = by_id.get(answer.get("top_pick_doc_id")) or (picks[0] if picks else None)
     if top_pick:

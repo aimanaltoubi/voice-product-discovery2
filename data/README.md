@@ -1,35 +1,30 @@
 # Data
 
-## Private catalog source (assignment dataset)
+## Private catalog source
 
-The brief specifies the **Amazon Product Dataset 2020** slice from Kaggle:
+The catalog is the Amazon Product Dataset 2020 from Kaggle:
 
 > https://www.kaggle.com/datasets/promptcloud/amazon-product-dataset-2020
 
-That dataset is **not redistributed in this repo** (Kaggle datasets carry
-their own licenses). The Colab walkthrough downloads it automatically at
-run time via `kagglehub` (public dataset, no account needed):
+The dataset is not redistributed in this repository (Kaggle datasets carry
+their own licenses). The Colab notebooks download it automatically at run
+time (public dataset - no account needed):
 
 ```python
 import kagglehub
 path = kagglehub.dataset_download("promptcloud/amazon-product-dataset-2020")
 ```
 
-For a local machine, download it yourself, then ingest a curated slice:
+For a local machine: download the CSV from Kaggle yourself and ingest the
+slice this project uses:
 
 ```bash
-# 1) download + unzip from Kaggle, put the CSV under data/raw/, e.g.:
-#    data/raw/marketing_sample_for_amazon_com-ecommerce__20200101_20200131__10k_data.csv
-
-# 2) build parquet files + the Chroma vector index (run from backend/)
-cd backend
-python -m rag.ingest --csv ../data/raw/<the-kaggle-file>.csv \
-    --category "Household" --limit 3000
+# run from backend/
+python -m rag.ingest --csv ../data/raw/<the-kaggle-file>.csv --category "Home & Kitchen"
 ```
 
-`--category` filters rows whose category column contains the substring
-(case-insensitive) — use it to pick the household/cleaning slice the brief
-suggests. `--limit` caps the index size for fast local builds.
+--category keeps rows whose category column contains the term
+(case-insensitive). --limit caps the index size for quick local tests.
 
 ## Generated outputs (git-ignored)
 

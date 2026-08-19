@@ -6,7 +6,7 @@ uvicorn>=0.30
 python-multipart>=0.0.9
 python-dotenv>=1.0
 
-# --- Agentic orchestration (LangGraph is mandated by the project brief) ---
+# --- Agentic orchestration (LangGraph) ---
 langgraph>=0.2.0
 langchain>=0.3.0
 langchain-openai>=0.2.0

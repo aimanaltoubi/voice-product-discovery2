@@ -4,7 +4,7 @@ The graph nodes never talk to a provider SDK directly; they call
 `call_structured(prompt, Schema, node=...)`. The provider/model is selected via
 env (LLM_PROVIDER / LLM_MODEL) and instantiated through LangChain's
 `init_chat_model`, so swapping OpenAI <-> Anthropic <-> Gemini <-> Ollama is a
-config change only (brief: "Model-Agnostic Requirement").
+config change only.
 
 """
 from __future__ import annotations
