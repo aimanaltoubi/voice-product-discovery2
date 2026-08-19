@@ -251,9 +251,10 @@ async def speak(req: SpeakRequest):
     # voice never reads them - and cap at ~37 words (a fifteen second read)
     import re as _re
     text = _re.sub(r"\s*\[\d[\d,\s\-]*\]", "", str(req.text or "")).strip()
+    # the Edge voice reads near 1.8 words per second - 26 words fits 15 s
     words = text.split()
-    if len(words) > 37:
-        clipped = " ".join(words[:37])
+    if len(words) > 26:
+        clipped = " ".join(words[:26])
         stop = max(clipped.rfind("."), clipped.rfind("!"), clipped.rfind("?"))
         text = clipped[: stop + 1] if stop > 0 else clipped
     try:
