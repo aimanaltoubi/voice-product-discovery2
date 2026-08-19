@@ -68,6 +68,7 @@ class _MockStructured:
             )
         if name == "PlanOutput":
             live = '"needs_live": true' in text or '"freshness_needed": true' in text
+            live = live or '"intent": "product_search"' in text
             m = _re.search(r'"budget":\s*(\d+(?:\.\d+)?)', text)
             eco = '"eco_friendly": true' in text or None
             mat = "microfiber" if '"material": "microfiber"' in text else None
@@ -100,7 +101,8 @@ class _MockStructured:
                         "source_type": "catalog", "doc_id": top, "field": "features"}]
                       if top else [])
             return self.schema(spoken_answer=spoken, top_pick_doc_id=top,
-                               citation_doc_ids=ids[:2], claims=claims)
+                               citation_doc_ids=ids[:2], claims=claims,
+                               top_pick_reason="Soft and well made and within your budget.")
         return self.schema()
 
 

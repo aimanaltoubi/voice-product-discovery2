@@ -230,7 +230,8 @@ async def run_evaluation(mcp, skip_asr: bool = False, skip_judge: bool = False) 
         router_out = next((s.get("output") or {} for s in steps if s.get("name") == "router"), {})
         if result.get("blocked"):
             predicted = "safety"
-        elif "web.search" in names or router_out.get("needs_live") or router_out.get("freshness_needed"):
+        elif router_out.get("needs_live") or router_out.get("freshness_needed") \
+                or router_out.get("intent") == "price_check":
             predicted = "live"
         else:
             predicted = "catalog"

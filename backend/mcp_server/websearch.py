@@ -3,6 +3,7 @@
 
 Default is the keyless DuckDuckGo backend (`ddgs`); Serper / Brave / Tavily
 are official search APIs selected via WEB_SEARCH_PROVIDER + an API key.
+WEB_SEARCH_PROVIDER=openai is the original-app parity mode (Responses web_search).
 We only call search APIs / libraries — we never scrape result pages, which is
 how this layer respects robots.txt / ToS (see docs/safety.md).
 """
@@ -88,7 +89,52 @@ def _search_tavily(query: str, n: int) -> list[dict]:
     return [_normalize(i.get("title", ""), i.get("url", ""), i.get("content", "")) for i in items]
 
 
-_PROVIDERS = {"ddg": _search_ddg, "serper": _search_serper,
+
+
+def _search_openai(query: str, n: int) -> list[dict]:
+    """Original-app parity mode: the OpenAI Responses web_search tool reads the
+    pages themselves so prices come from page content rather than snippets.
+    Uses the same OPENAI_API_KEY. Selected via WEB_SEARCH_PROVIDER=openai."""
+    import json as _json
+    import os
+    key = os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        raise RuntimeError("WEB_SEARCH_PROVIDER=openai needs OPENAI_API_KEY")
+    prompt = (
+        f"Search the web for current online prices and availability of: {query}. "
+        "List up to " + str(n) + " results from major US retailers. Return JSON only: "
+        '{"results": [{"title": str, "url": str, "snippet": str, '
+        '"price": number or null, "availability": str}]}'
+    )
+    r = httpx.post(
+        "https://api.openai.com/v1/responses",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={"model": "gpt-4o-mini", "tools": [{"type": "web_search"}], "input": prompt},
+        timeout=60,
+    )
+    r.raise_for_status()
+    data = r.json()
+    text = ""
+    for item in data.get("output", []):
+        for part in item.get("content", []) or []:
+            if part.get("type") in ("output_text", "text"):
+                text += part.get("text", "")
+    try:
+        parsed = _json.loads(text[text.index("{"): text.rindex("}") + 1])
+    except Exception:
+        return []
+    out = []
+    for row in parsed.get("results", [])[:n]:
+        item = _normalize(str(row.get("title", "")), str(row.get("url", "")),
+                          str(row.get("snippet", "")))
+        if isinstance(row.get("price"), (int, float)):
+            item["price"] = float(row["price"])
+        if row.get("availability"):
+            item["availability"] = str(row["availability"])
+        out.append(item)
+    return out
+
+_PROVIDERS = {"ddg": _search_ddg, "openai": _search_openai, "serper": _search_serper,
               "brave": _search_brave, "tavily": _search_tavily}
 
 

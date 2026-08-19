@@ -125,6 +125,10 @@ class AnswerOutput(BaseModel):
     top_pick_doc_id: str = Field(
         default="", description="doc_id of the top pick; must exist in the rows.")
     citation_doc_ids: List[str] = Field(default_factory=list)
+    top_pick_reason: str = Field(
+        default="",
+        description="One short line on why the top pick wins - grounded in its retrieved fields.",
+    )
     claims: List[Claim] = Field(
         default_factory=list,
         description="Every factual statement in the spoken answer with its source. Order matches the [n] markers.",

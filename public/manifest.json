@@ -1,0 +1,9 @@
+{
+  "name": "DiscoveryVoice",
+  "short_name": "DiscoveryVoice",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0B3B2C",
+  "icons": []
+}

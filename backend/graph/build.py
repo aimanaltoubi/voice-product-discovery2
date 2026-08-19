@@ -166,11 +166,21 @@ async def run_discovery(
             citations.append({"type": "live", "url": url, "title": match.get("web_title")})
             seen_urls.add(url)
 
+    # a note column for the table (piece count read from the title)
+    import re as _re
+    def _note(title):
+        m = _re.search(r"(\d+)\s*[- ]?piece", str(title or ""), _re.I)
+        return f"{m.group(1)}-piece set" if m else None
+    for _row in comparison_table:
+        _row["note"] = _note(_row.get("title"))
+
     top_pick = by_id.get(answer.get("top_pick_doc_id")) or (picks[0] if picks else None)
     if top_pick:
         top_pick = next(
             (r for r in comparison_table if r["doc_id"] == top_pick.get("doc_id")), None
         )
+    if top_pick and answer.get("top_pick_reason"):
+        top_pick = {**top_pick, "reason": answer["top_pick_reason"]}
 
     return {
         "transcript": transcript,

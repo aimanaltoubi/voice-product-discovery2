@@ -202,13 +202,16 @@ def build_nodes(mcp: MCPToolClient) -> dict:
         if "rag.search" not in plan["sources"]:
             plan["sources"].insert(0, "rag.search")
             enforced.append("added rag.search (private catalog is always primary)")
-        # Rubric rule 2: web.search iff the user asked for live info.
-        if router.get("needs_live") and "web.search" not in plan["sources"]:
+        # Rubric rule 2: the live web joins for product searches and price
+        # checks (comparison shopping parity with the original app). Only
+        # general questions stay catalog-only
+        wants_web = router.get("needs_live") or router.get("intent") in ("product_search", "price_check")
+        if wants_web and "web.search" not in plan["sources"]:
             plan["sources"].append("web.search")
-            enforced.append("added web.search (router flagged needs_live)")
-        if not router.get("needs_live") and "web.search" in plan["sources"]:
+            enforced.append("added web.search (product search or live-data request)")
+        if not wants_web and "web.search" in plan["sources"]:
             plan["sources"] = [s for s in plan["sources"] if s != "web.search"]
-            enforced.append("removed web.search (no live-data request; web is fallback-only)")
+            enforced.append("removed web.search (general question; catalog only)")
 
         # Merge router constraints into any filter slots the planner left empty.
         c = router.get("constraints") or {}
@@ -303,6 +306,7 @@ def build_nodes(mcp: MCPToolClient) -> dict:
                     "resolved_category": resp.get("resolved_category"),
                     "relaxations": resp.get("relaxations"),
                     "error": resp.get("error"),
+                    "results": [_slim(c, keep_features=120) for c in candidates],
                     "candidates": [_slim(c, keep_features=120) for c in candidates],
                     "rerank": rerank_info or None,
                 },
