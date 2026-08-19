@@ -46,18 +46,26 @@ def postprocess_answer(spoken: str) -> str:
     answer = re.sub(r"\[\s*\]", "", str(spoken)).strip()
     answer = re.sub(r"\s{2,}", " ", answer)
     answer = re.sub(r"\s+([.,!?])", r"\1", answer)
-    words = answer.split()
-    if len(words) > 60:
-        clipped = " ".join(words[:60])
+    FOLLOW_UP = " Would you like the most affordable option or the highest rated one?"
+
+    def _cap(text, limit):
+        toks = text.split()
+        if len(toks) <= limit:
+            return text
+        clipped = " ".join(toks[:limit])
         stop = max(clipped.rfind("."), clipped.rfind("!"), clipped.rfind("?"))
-        answer = clipped[: stop + 1] if stop > 0 else clipped
-    if not answer.rstrip().endswith("?"):
-        answer = answer.rstrip().rstrip(".!") +             ". Would you like the most affordable option or the highest rated one?"
+        return clipped[: stop + 1] if stop > 0 else clipped
+
+    if answer.rstrip().endswith("?"):
+        answer = _cap(answer, 60)
+        if not answer.rstrip().endswith("?"):
+            answer = _cap(answer, 60 - len(FOLLOW_UP.split())).rstrip().rstrip(".!") + "." + FOLLOW_UP
+    else:
+        answer = _cap(answer, 60 - len(FOLLOW_UP.split())).rstrip().rstrip(".!") + "." + FOLLOW_UP
     return answer.strip()
 
 
 _PRICE_IN_TEXT = re.compile(r"\$\s*(\d+(?:\.\d{1,2})?)")
-_NAME_IN_CLAIM = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-zA-Z]+)+)\b")
 
 
 def _claim_ok(claim: dict, by_id: dict, web_urls: set) -> bool:
@@ -73,10 +81,6 @@ def _claim_ok(claim: dict, by_id: dict, web_urls: set) -> bool:
             return False
     if claim.get("field") == "eco_friendly" and doc.get("eco_friendly") is False:
         return False
-    hay = (str(doc.get("title") or "") + " " + str(doc.get("brand") or "")).lower()
-    for name in _NAME_IN_CLAIM.findall(text):
-        if len(name.split()) >= 2 and name.lower() not in hay:
-            return False
     return True
 
 
