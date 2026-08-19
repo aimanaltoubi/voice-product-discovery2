@@ -96,6 +96,9 @@ def _price_from_text(*texts: str) -> float | None:
 # node factory
 # --------------------------------------------------------------------------
 
+from graph import dv
+
+
 def build_nodes(mcp: MCPToolClient) -> dict:
     """Return the node callables closed over the shared MCP client."""
 
@@ -111,6 +114,21 @@ def build_nodes(mcp: MCPToolClient) -> dict:
             prompt, RouterOutput, node="router", context={"transcript": transcript}
         )
         router = out.model_dump()
+        # DiscoveryVoice behaviors: merge the previous turn's constraints for
+        # follow-ups - run the deterministic safety keyword net before anything
+        # else - and catch freshness wording the model missed
+        prior = state.get("prior_constraints") or {}
+        for key, value in prior.items():
+            if key in router["constraints"] and router["constraints"].get(key) in (None, "", []):
+                router["constraints"][key] = value
+        if dv.detect_safety(transcript):
+            flags = router.get("safety_flags") or []
+            if "keyword_net" not in flags:
+                flags.append("keyword_net")
+            router["safety_flags"] = flags
+        if dv.is_freshness(transcript) or router.get("intent") == "price_check":
+            router["needs_live"] = True
+            router["freshness_needed"] = True
         return {
             "router": router,
             "steps": [step(
@@ -138,6 +156,23 @@ def build_nodes(mcp: MCPToolClient) -> dict:
             "I'm happy to recommend safe, ready-made cleaning products instead."
         )
         answer = {"spoken_answer": refusal, "top_pick_doc_id": "", "citation_doc_ids": []}
+        # Mixed requests: fulfill the safe part with an explicit refusal prefix.
+        # Only a fully-unsafe request is hard-blocked
+        permissible = (state["router"].get("permissible_query") or "").strip()
+        if permissible and not dv.detect_safety(permissible):
+            prefix = ("I can't help with the unsafe part of that - mixing household "
+                      "chemicals can release toxic gases. For the safe part: ")
+            return {
+                "blocked": False,
+                "transcript": permissible,
+                "refusal_prefix": prefix,
+                "steps": [step(
+                    "safety",
+                    {"safety_flags": flags, "policy": "docs/safety.md - no unsafe chemical advice"},
+                    {"action": "answer_permissible_part", "permissible_query": permissible,
+                     "reason": "unsafe part refused - safe part fulfilled"},
+                )],
+            }
         return {
             "blocked": True,
             "answer": answer,

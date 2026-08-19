@@ -53,10 +53,32 @@ class OpenAIEmbedder(Embedder):
         return out
 
 
+
+
+class HashEmbedder:
+    """Deterministic token-hash vectors. Test-only: lets ingest and retrieval
+    run offline with no model download. Not semantic."""
+    name = "hash-384-test-only"
+    dim = 384
+
+    def encode(self, texts):
+        import hashlib
+        out = []
+        for text in texts:
+            vec = [0.0] * self.dim
+            for tok in str(text).lower().split():
+                h = int(hashlib.md5(tok.encode()).hexdigest(), 16)
+                vec[h % self.dim] += 1.0
+            norm = sum(v * v for v in vec) ** 0.5 or 1.0
+            out.append([v / norm for v in vec])
+        return out
+
 def get_embedder() -> Embedder:
     p = settings.EMBEDDINGS_PROVIDER
     if p == "local":
         return LocalMiniLMEmbedder()
     if p == "openai":
         return OpenAIEmbedder()
+    if p == "hash":
+        return HashEmbedder()
     raise ValueError(f"Unknown EMBEDDINGS_PROVIDER={p!r} (local | openai)")

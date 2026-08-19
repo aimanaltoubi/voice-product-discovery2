@@ -21,12 +21,12 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app.config import MEDIA_DIR, RUN_LOGS_DIR, settings
+from app.config import DATA_DIR, MEDIA_DIR, RUN_LOGS_DIR, settings
 from graph.build import run_discovery
 from mcp_server.client import MCPToolClient
 from speech.asr import transcribe as asr_transcribe
@@ -67,7 +67,16 @@ app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
 # --------------------------------------------------------------------------
 
 class DiscoverRequest(BaseModel):
-    transcript: str = Field(min_length=1, max_length=2000)
+    transcript: str | None = None
+    query: str | None = None
+    history: list | None = None
+    prior_context: dict | None = None
+    constraints: dict | None = None
+
+    @property
+    def text(self) -> str:
+        return (self.transcript or self.query or "").strip()
+
 
 
 class SpeakRequest(BaseModel):
@@ -90,8 +99,40 @@ async def health():
     }
 
 
+@app.post("/api/upload")
+async def upload(file: UploadFile = File(...)):
+    """Save a recording and hand back a /media address for it."""
+    suffix = Path(file.filename or "clip.webm").suffix or ".webm"
+    name = f"upload_{uuid.uuid4().hex[:10]}{suffix}"
+    dest = MEDIA_DIR / name
+    dest.write_bytes(await file.read())
+    return {"file_url": f"/media/{name}"}
+
+
 @app.post("/api/transcribe")
-async def transcribe(audio: UploadFile = File(...)):
+async def transcribe(request: Request, audio: UploadFile | None = File(default=None)):
+    # two doors: a direct multipart file - or JSON {audio_url} pointing at /media
+    if audio is None and "application/json" in (request.headers.get("content-type") or ""):
+        body = await request.json()
+        audio_url = str(body.get("audio_url") or "")
+        name = audio_url.split("/media/")[-1].split("?")[0]
+        local = MEDIA_DIR / name
+        if not name or not local.exists():
+            raise HTTPException(status_code=400, detail="audio_url must point at an uploaded /media file.")
+        try:
+            result = await asr_transcribe(str(local))
+        except Exception as e:
+            log.exception("ASR failed")
+            raise HTTPException(status_code=500, detail=f"Transcription failed: {e}") from e
+        if not result.get("transcript"):
+            raise HTTPException(status_code=422, detail="No speech detected in the recording.")
+        return result
+    if audio is None:
+        raise HTTPException(status_code=400, detail="Send a multipart file or JSON with audio_url.")
+    return await _transcribe_upload(audio)
+
+
+async def _transcribe_upload(audio: UploadFile):
     suffix = Path(audio.filename or "clip.webm").suffix or ".webm"
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     try:
@@ -112,7 +153,11 @@ async def transcribe(audio: UploadFile = File(...)):
 async def discover(req: DiscoverRequest):
     started = time.perf_counter()
     try:
-        payload = await run_discovery(req.transcript.strip(), app.state.mcp)
+        payload = await run_discovery(
+            req.text, app.state.mcp,
+            history=req.history, prior_context=req.prior_context,
+            constraints=req.constraints,
+        )
     except Exception as e:
         log.exception("Discovery pipeline failed")
         raise HTTPException(status_code=500, detail=f"Discovery failed: {e}") from e
@@ -133,10 +178,86 @@ async def discover(req: DiscoverRequest):
     return payload
 
 
+
+
+_PRODUCTS_CACHE = {"df": None, "mtime": None}
+
+
+def _products_df():
+    import pandas as pd
+    parquet = DATA_DIR / "processed" / "products.parquet"
+    if not parquet.exists():
+        raise HTTPException(status_code=503, detail="Catalog not built yet. Run the ingest step first.")
+    mtime = parquet.stat().st_mtime
+    if _PRODUCTS_CACHE["df"] is None or _PRODUCTS_CACHE["mtime"] != mtime:
+        _PRODUCTS_CACHE["df"] = pd.read_parquet(parquet)
+        _PRODUCTS_CACHE["mtime"] = mtime
+    return _PRODUCTS_CACHE["df"]
+
+
+def _product_row(row) -> dict:
+    import math
+    out = {}
+    for key, value in row.items():
+        if hasattr(value, "item"):
+            value = value.item()
+        if isinstance(value, float) and math.isnan(value):
+            value = None
+        out[key] = value
+    out["image_url"] = out.pop("image", None)
+    out["specifications"] = out.pop("specs", None)
+    return out
+
+
+@app.get("/api/products")
+async def products(sort: str = "-rating", limit: int = 200, doc_id: str | None = None):
+    df = _products_df()
+    if doc_id:
+        rows = df[df.doc_id == doc_id]
+        return [_product_row(r) for _, r in rows.iterrows()]
+    column = sort.lstrip("-")
+    if column in df.columns:
+        df = df.sort_values(column, ascending=not sort.startswith("-"), na_position="last")
+    return [_product_row(r) for _, r in df.head(max(1, min(int(limit), 1000))).iterrows()]
+
+
+@app.get("/api/products/{doc_id}")
+async def product_detail(doc_id: str):
+    df = _products_df()
+    rows = df[df.doc_id == doc_id]
+    if rows.empty:
+        raise HTTPException(status_code=404, detail="No product with that doc_id.")
+    return _product_row(rows.iloc[0])
+
+
+@app.post("/api/evaluate")
+async def evaluate(request: Request):
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    from app.evaluation import run_evaluation
+    return await run_evaluation(
+        app.state.mcp,
+        skip_asr=bool(body.get("skip_asr")),
+        skip_judge=bool(body.get("skip_judge")),
+    )
+
+
 @app.post("/api/speak")
 async def speak(req: SpeakRequest):
+    # parity with the original app: strip inline [n] citation markers so the
+    # voice never reads them - and cap at ~37 words (a fifteen second read)
+    import re as _re
+    text = _re.sub(r"\s*\[\d[\d,\s\-]*\]", "", str(req.text or "")).strip()
+    words = text.split()
+    if len(words) > 37:
+        clipped = " ".join(words[:37])
+        stop = max(clipped.rfind("."), clipped.rfind("!"), clipped.rfind("?"))
+        text = clipped[: stop + 1] if stop > 0 else clipped
     try:
-        filename = await synthesize(req.text)
+        filename = await synthesize(text)
     except Exception as e:
         log.exception("TTS failed")
         raise HTTPException(status_code=500, detail=f"Speech synthesis failed: {e}") from e

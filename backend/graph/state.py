@@ -31,6 +31,8 @@ class DiscoveryState(TypedDict, total=False):
     answer: dict[str, Any]            # AnswerOutput.model_dump()
     mode: str                         # "private" | "web_fallback"
     blocked: bool
+    prior_constraints: dict[str, Any]   # carried in from the previous turn
+    refusal_prefix: str                  # set when a mixed request's unsafe part was refused
     # Every node appends its own entries; operator.add concatenates them
     # in execution order for the UI's agent step log.
     steps: Annotated[list[dict[str, Any]], operator.add]
@@ -53,6 +55,17 @@ class Constraints(BaseModel):
         default=None, description="True only if eco/green/natural was implied.")
 
 
+
+class Claim(BaseModel):
+    """One factual statement in the spoken answer with its source."""
+    claim: str = Field(description="The factual statement made in the answer.")
+    source_type: Literal["catalog", "web"] = "catalog"
+    doc_id: Optional[str] = Field(default=None, description="Catalog doc_id backing the claim.")
+    field: Optional[str] = Field(default=None, description="Which product field backs it (price, eco_friendly, features).")
+    web_url: Optional[str] = None
+    web_title: Optional[str] = None
+
+
 class RouterOutput(BaseModel):
     """Intent and constraint extraction plus safety and freshness flags."""
     task: str = Field(
@@ -62,6 +75,18 @@ class RouterOutput(BaseModel):
     safety_flags: List[str] = Field(
         default_factory=list,
         description="Non-empty if the request seeks unsafe chemical advice.")
+    intent: str = Field(
+        default="product_search",
+        description="One of product_search | price_check | general_question.",
+    )
+    freshness_needed: bool = Field(
+        default=False,
+        description="True when the request is about current price or stock or availability.",
+    )
+    permissible_query: Optional[str] = Field(
+        default=None,
+        description="When the request mixes a safe part with an unsafe part: the safe part alone. Null otherwise.",
+    )
     needs_live: bool = Field(
         default=False,
         description="True if the user asked for current/latest price, stock or availability.")
@@ -100,3 +125,7 @@ class AnswerOutput(BaseModel):
     top_pick_doc_id: str = Field(
         default="", description="doc_id of the top pick; must exist in the rows.")
     citation_doc_ids: List[str] = Field(default_factory=list)
+    claims: List[Claim] = Field(
+        default_factory=list,
+        description="Every factual statement in the spoken answer with its source. Order matches the [n] markers.",
+    )

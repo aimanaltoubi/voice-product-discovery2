@@ -17,14 +17,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND = REPO_ROOT / "backend"
-DIST = REPO_ROOT / "frontend" / "dist"
+DIST = REPO_ROOT / "dist"
 
 sys.path.insert(0, str(BACKEND))
 os.chdir(BACKEND)  # relative paths (logs, storage) behave as documented
 
 if not DIST.exists():
     raise SystemExit(
-        "frontend/dist not found — build the UI first:\n"
+        "dist not found — build the UI first:\n"
         "  cd frontend && npm install && npx vite build"
     )
 

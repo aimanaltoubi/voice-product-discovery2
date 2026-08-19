@@ -18,6 +18,7 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 
+from graph import dv
 from graph.nodes import build_nodes
 from graph.state import DiscoveryState
 from mcp_server.client import MCPToolClient
@@ -65,15 +66,63 @@ def _graph_for(mcp: MCPToolClient):
     return _compiled_cache[key]
 
 
-async def run_discovery(transcript: str, mcp: MCPToolClient) -> dict[str, Any]:
+async def run_discovery(
+    transcript: str,
+    mcp: MCPToolClient,
+    history: list | None = None,
+    prior_context: dict | None = None,
+    constraints: dict | None = None,
+) -> dict[str, Any]:
     """Run the full pipeline and shape the response for the frontend."""
     graph = _graph_for(mcp)
+    prior_constraints = {}
+    prior_constraints.update((prior_context or {}).get("last_constraints") or {})
+    prior_constraints.update({k: v for k, v in (constraints or {}).items() if v not in (None, "", [])})
     final: DiscoveryState = await graph.ainvoke(
-        {"transcript": transcript, "steps": []}
+        {"transcript": transcript, "steps": [], "prior_constraints": prior_constraints}
     )
 
     answer = final.get("answer") or {}
     picks = final.get("top_picks") or []
+
+    # DiscoveryVoice grounding layer: verify every claim against the retrieved
+    # rows and the live results - then post-process the spoken answer
+    web_results = []
+    for entry in final.get("steps", []):
+        if entry.get("name") == "web.search":
+            web_results = (entry.get("output") or {}).get("results") or []
+    products_full = [
+        {
+            "doc_id": p.get("doc_id"),
+            "title": p.get("title"),
+            "brand": p.get("brand"),
+            "category": p.get("category"),
+            "price": p.get("price"),
+            "rating": p.get("rating"),
+            "eco_friendly": p.get("eco_friendly"),
+            "features": p.get("features"),
+            "ingredients": p.get("ingredients"),
+            "review_snippets": p.get("review_snippets"),
+            "specifications": p.get("specs"),
+            "image_url": p.get("image"),
+            "price_per_oz": p.get("price_per_oz"),
+            "url": p.get("url"),
+        }
+        for p in picks
+    ]
+    if not final.get("blocked"):
+        grounded = dv.enforce_grounding(answer, products_full, web_results)
+        spoken = grounded["spoken_answer"]
+        prefix = final.get("refusal_prefix") or ""
+        if prefix:
+            spoken = prefix + spoken
+        answer = {
+            **answer,
+            "spoken_answer": dv.postprocess_answer(spoken),
+            "claims": grounded["claims"],
+            "citation_doc_ids": grounded["citation_doc_ids"],
+            "top_pick_doc_id": grounded["top_pick_doc_id"],
+        }
     comparison_table = [
         {
             "doc_id": p.get("doc_id"),
@@ -130,6 +179,8 @@ async def run_discovery(transcript: str, mcp: MCPToolClient) -> dict[str, Any]:
         "top_pick": top_pick,
         "comparison_table": comparison_table,
         "citations": citations,
+        "claims": answer.get("claims", []),
+        "products": products_full,
         "blocked": bool(final.get("blocked")),
         "source": final.get("mode", "private"),
     }
