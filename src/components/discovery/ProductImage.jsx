@@ -28,6 +28,7 @@ export default function ProductImage({ src, alt, className }) {
       src={url}
       alt={alt || ""}
       loading="lazy"
+      referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
       className={className}
     />

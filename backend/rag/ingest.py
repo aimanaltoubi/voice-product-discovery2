@@ -41,6 +41,24 @@ COLUMN_CANDIDATES: dict[str, list[str]] = {
     "features": ["features", "About Product", "about_product", "Product Description", "description"],
     "ingredients": ["ingredients", "Product Specification", "product_specification"],
     "reviews": ["review_snippets", "reviews", "Customer Reviews", "customer_reviews"],
+    "image": ["image", "Image"],
+    "variants": ["variants", "Variants"],
+    "product_url": ["product_url", "Product Url"],
+    "shipping_weight": ["shipping_weight", "Shipping Weight"],
+    "dimensions": ["dimensions", "Product Dimensions", "Dimensions"],
+    "color": ["color", "Color"],
+    "size_variant": ["size_variant", "Size Quantity Variant"],
+    "stock": ["stock", "Stock"],
+    "directions": ["directions", "Direction To Use"],
+    "is_amazon_seller": ["is_amazon_seller", "Is Amazon Seller"],
+    "specs": ["specs", "Product Specification", "Technical Details"],
+    "color": ["color", "Color"],
+    "dimensions": ["dimensions", "Product Dimensions"],
+    "shipping_weight": ["shipping_weight", "Shipping Weight"],
+    "stock": ["stock", "Stock"],
+    "directions": ["directions", "Directions"],
+    "size_variant": ["size_variant", "Size Quantity Variant"],
+    "is_amazon_seller": ["is_amazon_seller", "Is Amazon Seller"],
 }
 
 ECO_KEYWORDS = (
@@ -153,6 +171,24 @@ def load_and_normalize(csv_path: Path, category_filter: str | None, limit: int |
             "size_oz": size_oz,
             "price_per_oz": round(price / size_oz, 4) if price and size_oz else None,
             "review_snippets": snippets,
+            "image": val(row, "image"),
+            "variants": val(row, "variants"),
+            "product_url": val(row, "product_url"),
+            "color": val(row, "color"),
+            "dimensions": val(row, "dimensions"),
+            "shipping_weight": val(row, "shipping_weight"),
+            "stock": val(row, "stock"),
+            "directions": val(row, "directions"),
+            "size_variant": val(row, "size_variant"),
+            "is_amazon_seller": str(val(row, "is_amazon_seller") or "").strip().upper() in ("Y", "TRUE", "1"),
+            "shipping_weight": val(row, "shipping_weight"),
+            "dimensions": val(row, "dimensions"),
+            "color": val(row, "color"),
+            "size_variant": val(row, "size_variant"),
+            "stock": val(row, "stock"),
+            "directions": (val(row, "directions") or "")[:600] or None,
+            "is_amazon_seller": (val(row, "is_amazon_seller") or "").upper().startswith("Y"),
+            "specs": (val(row, "specs") or "")[:1200] or None,
         })
         for sn in [s.strip() for s in snippets.split("|") if s.strip()]:
             reviews.append({"product_id": doc_id, "stars": rating, "summary": sn})
@@ -188,6 +224,8 @@ def build_index(products: pd.DataFrame) -> None:
             "features": (p["features"] or "")[:400],
             "ingredients": (p["ingredients"] or "")[:300],
         }
+        if p.get("image"):
+            meta["image"] = str(p["image"])[:600]
         for numf in ("price", "rating", "size_oz", "price_per_oz"):
             v = p[numf]
             if v is not None and not pd.isna(v):

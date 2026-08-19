@@ -66,6 +66,25 @@ def _graph_for(mcp: MCPToolClient):
     return _compiled_cache[key]
 
 
+
+_CATALOG_CACHE: dict = {"rows": None, "mtime": None}
+
+
+def _catalog_lookup() -> dict:
+    """doc_id -> full parquet row. The retrieval index carries slim metadata -
+    the parquet is the authoritative record for images and links and specs."""
+    from app.config import DATA_DIR
+    parquet = DATA_DIR / "processed" / "products.parquet"
+    if not parquet.exists():
+        return {}
+    mtime = parquet.stat().st_mtime
+    if _CATALOG_CACHE["rows"] is None or _CATALOG_CACHE["mtime"] != mtime:
+        import pandas as pd
+        df = pd.read_parquet(parquet)
+        _CATALOG_CACHE["rows"] = {r["doc_id"]: r.dropna().to_dict() for _, r in df.iterrows()}
+        _CATALOG_CACHE["mtime"] = mtime
+    return _CATALOG_CACHE["rows"]
+
 async def run_discovery(
     transcript: str,
     mcp: MCPToolClient,
@@ -110,6 +129,15 @@ async def run_discovery(
         }
         for p in picks
     ]
+    catalog = _catalog_lookup()
+    for row in products_full:
+        full = catalog.get(row["doc_id"]) or {}
+        row["image_url"] = row["image_url"] or full.get("image")
+        row["product_url"] = full.get("product_url")
+        row["url"] = row["url"] or full.get("product_url")
+        row["variants"] = full.get("variants")
+        row["specifications"] = row["specifications"] or full.get("specs")
+        row["review_snippets"] = row["review_snippets"] or full.get("review_snippets")
     if not final.get("blocked"):
         grounded = dv.enforce_grounding(answer, products_full, web_results)
         spoken = grounded["spoken_answer"]
@@ -138,41 +166,19 @@ async def run_discovery(
         for p in picks
     ]
 
-    # Citations: private rows cite by doc_id; web rows / matched live pages
-    # cite by URL — the same split the UI's CitationList renders.
+    # Citations: catalog sources only. The screen renders live web options
+    # from the web.search step itself so mixing them here duplicated them
+    by_id = {p.get("doc_id"): p for p in products_full}
     citations: list[dict[str, Any]] = []
-    seen_urls: set[str] = set()
-    cited_ids = answer.get("citation_doc_ids") or [p.get("doc_id") for p in picks]
-    by_id = {p.get("doc_id"): p for p in picks}
-    for doc_id in cited_ids:
+    for doc_id in (answer.get("citation_doc_ids") or []):
         row = by_id.get(doc_id)
-        if not row:
-            continue
-        if str(doc_id).startswith("web-"):
-            url = row.get("url")
-            if url and url not in seen_urls:
-                citations.append({"type": "live", "url": url, "title": row.get("title")})
-                seen_urls.add(url)
-        else:
-            citations.append({
-                "type": "private",
-                "doc_id": doc_id,
-                "title": row.get("title"),
-                "brand": row.get("brand"),
-            })
-    for match in ((final.get("reconciliation") or {}).get("matches") or {}).values():
-        url = match.get("web_url")
-        if url and url not in seen_urls:
-            citations.append({"type": "live", "url": url, "title": match.get("web_title")})
-            seen_urls.add(url)
-
-    # a note column for the table (piece count read from the title)
-    import re as _re
-    def _note(title):
-        m = _re.search(r"(\d+)\s*[- ]?piece", str(title or ""), _re.I)
-        return f"{m.group(1)}-piece set" if m else None
-    for _row in comparison_table:
-        _row["note"] = _note(_row.get("title"))
+        if row and not str(doc_id).startswith("web-"):
+            citations.append({"type": "private", "doc_id": doc_id,
+                              "title": row.get("title"), "brand": row.get("brand")})
+    if not citations and comparison_table:
+        first = comparison_table[0]
+        citations.append({"type": "private", "doc_id": first.get("doc_id"),
+                          "title": first.get("title"), "brand": first.get("brand")})
 
     top_pick = by_id.get(answer.get("top_pick_doc_id")) or (picks[0] if picks else None)
     if top_pick:

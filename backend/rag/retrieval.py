@@ -130,6 +130,7 @@ def hybrid_search(
                 "ingredients": meta.get("ingredients"),
                 "features": meta.get("features"),
                 "eco_friendly": meta.get("eco_friendly"),
+                "image": meta.get("image"),
                 "size_oz": meta.get("size_oz"),
                 "price_per_oz": meta.get("price_per_oz"),
                 "score": round(1.0 / (1.0 + float(dist)), 4),
